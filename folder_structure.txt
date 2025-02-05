@@ -1,0 +1,62 @@
+fastapi-auth/
+│
+├── alembic/
+│
+├── src/
+│   ├── auth/
+│   │   ├── router.py
+│   │   ├── schemas.py
+│   │   ├── models.py
+│   │   ├── dependencies.py
+│   │   ├── config.py
+│   │   ├── constants.py
+│   │   ├── exceptions.py
+│   │   ├── service.py
+│   │   └── utils.py
+│   │
+│   ├── api/
+│   │   ├── router.py
+│   │   ├── schemas.py
+│   │   ├── models.py
+│   │   ├── dependencies.py
+│   │   ├── config.py
+│   │   ├── constants.py
+│   │   ├── exceptions.py
+│   │   ├── service.py
+│   │   └── utils.py
+│   │
+│   ├── analytics/
+│   │   ├── router.py
+│   │   ├── schemas.py
+│   │   ├── models.py
+│   │   ├── dependencies.py
+│   │   ├── config.py
+│   │   ├── constants.py
+│   │   ├── exceptions.py
+│   │   ├── service.py
+│   │   └── utils.py
+│   │
+│   ├── config.py
+│   ├── models.py
+│   ├── exceptions.py
+│   ├── pagination.py
+│   ├── database.py
+│   └── main.py
+│
+├── tests/
+│   ├── auth/
+│   ├── api/
+│   └── analytics/
+│
+├── templates/
+│   └── index.html
+│
+├── requirements/
+│   ├── base.txt
+│   ├── dev.txt
+│   └── prod.txt
+│
+├── .env
+├── .gitignore
+├── logging.ini
+└── alembic.ini

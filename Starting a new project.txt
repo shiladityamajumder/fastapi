@@ -1,0 +1,28 @@
+** Creating Virtual Environment
+
+python -m venv ."name"
+
+.name\Scripts\activate
+
+
+** Install FastAPI and Uvicorn:
+pip install fastapi uvicorn
+
+
+** Create Alembic Configuration
+# Navigate to the alembic directory
+cd alembic
+
+# Initialize Alembic
+alembic init alembic
+
+** Create Your First Migration
+# After setting up your models, you can create your first migration:
+# Make sure you're in the project root
+alembic revision --autogenerate -m "Initial migration"
+alembic upgrade head
+
+
+** Run Your Application
+# You can run your FastAPI application using Uvicorn:
+# uvicorn src.main:app --reload
