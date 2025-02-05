@@ -8,8 +8,11 @@ from fastapi.responses import JSONResponse
 # SQLAlchemy imports
 from sqlalchemy.orm import Session
 
+# Third-party imports
+from pydantic import ValidationError
+
 # Local application imports
-from .schemas import UserCreateSchema, UserResponseSchema, RegisterResponseWrapper
+from .schemas import UserCreateSchema, UserAuthResponseSchema, AuthResponseWrapper, AuthTokensSchema, UserResponseSchema, ErrorResponseWrapper, ErrorDetails
 from .service import create_user
 from .dependencies import get_db
 
@@ -18,14 +21,14 @@ from .dependencies import get_db
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
-# *********** ========== Authentication Router ========== ***********
-@router.post("/register", response_model=RegisterResponseWrapper, status_code=status.HTTP_201_CREATED)
-def register_user(user_data: UserCreateSchema, db: Session = Depends(get_db)):
+# *********** ========== Registration Router ========== ***********
+@router.post("/register", response_model=AuthResponseWrapper, status_code=status.HTTP_201_CREATED)
+async def register_user(user_data: UserCreateSchema, db: Session = Depends(get_db)):
     """
     Register a new user.
 
     Args:
-        user_data (User CreateSchema): The data for creating a new user.
+        user_data (UserCreateSchema): The data for creating a new user.
         db (Session): The database session.
 
     Returns:
@@ -36,71 +39,63 @@ def register_user(user_data: UserCreateSchema, db: Session = Depends(get_db)):
     """
 
     try:
-        # Call the create_user function to create the user and get the response
+        # Validate and create the user using the service function
         user_response = create_user(db, user_data)
     
+        # Return the response with user data and tokens
         return {
-            'data': {
-                'refresh': user_response['refresh_token'],
-                'access': user_response['access_token'],
-                "user": {
-                    "id": str(user_response["user"].id),
-                    "username": user_response["user"].username,
-                    "email": user_response["user"].email,
-                    "full_name": user_response["user"].full_name,
-                    "last_login": user_response["user"].last_login,
-                    "is_superuser": user_response["user"].is_superuser,
-                    "is_staff": user_response["user"].is_staff,
-                    "date_joined": user_response["user"].date_joined,
-                    "is_active": user_response["user"].is_active,
-                    "created_at": user_response["user"].created_at,
-                    "updated_at": user_response["user"].updated_at,
-                    "country_code": user_response["user"].country_code,
-                    "phone_number": user_response["user"].phone_number,
-                    "address": user_response["user"].address,
-                    "city": user_response["user"].city,
-                    "state": user_response["user"].state,
-                    "zip_code": user_response["user"].zip_code,
-                    "country": user_response["user"].country,
-                    "profile_picture": user_response["user"].profile_picture,
-                    "bio": user_response["user"].bio,
-                    "is_verified": user_response["user"].is_verified,
-                    "is_push_notification_enabled": user_response["user"].is_push_notification_enabled,
-                    "is_email_notification_enabled": user_response["user"].is_email_notification_enabled,
-                    "is_sms_notification_enabled": user_response["user"].is_sms_notification_enabled,
-                    "is_two_factor_enabled": user_response["user"].is_two_factor_enabled,
-                    "role": user_response["user"].role,
-                },
-                "status": "success",
-                "code": status.HTTP_201_CREATED
-            },
+            "data": UserAuthResponseSchema(
+                tokens=AuthTokensSchema(
+                    access=user_response['access_token'],
+                    refresh=user_response['refresh_token']
+                ),
+                user=UserResponseSchema.model_validate(user_response['user']),  # Using model_validate now
+                status="success",
+                code=status.HTTP_201_CREATED
+            ),
             "message": "Registration successful",
             "status": True
         }
     except ValueError as e:
+        # Specific user registration failure due to validation errors
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "data": {
-                    "details": str(e),
-                    "status": "error",
-                    "code": status.HTTP_400_BAD_REQUEST
-                },
-                "message": "Registration failed",
-                "status": False
-            }
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=str(e),
+                    status="error",
+                    code=status.HTTP_400_BAD_REQUEST
+                ),
+                message="Registration failed due to validation errors",
+                status=False
+            )
+        )
+    except ValidationError as e:
+        # Schema validation errors
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details="Invalid data format",
+                    status="error",
+                    code=status.HTTP_422_UNPROCESSABLE_ENTITY
+                ),
+                message=str(e),
+                status=False
+            )
         )
     except Exception as e:
+        # Catch all unexpected errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "data": {
-                    "details": str(e),
-                    "status": "error",
-                    "code": status.HTTP_500_INTERNAL_SERVER_ERROR
-                },
-                "message": "Registration failed",
-                "status": False
-            }
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details="An unexpected error occurred",
+                    status="error",
+                    code=status.HTTP_500_INTERNAL_SERVER_ERROR
+                ),
+                message="Registration failed",
+                status=False
+            )
         )
-# *********** ========== End of Authentication Router ========== ***********
+# *********** ========== End ========== ***********

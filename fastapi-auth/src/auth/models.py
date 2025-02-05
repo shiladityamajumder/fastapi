@@ -241,10 +241,15 @@ class User(Base):
         """Checks if the user account is active."""
         return self.is_active
 
-    def verify_two_factor(self, code: str) -> bool:
-        """Verifies the two-factor authentication code."""
-        # Implement your two-factor verification logic here
-        pass
+    def hard_delete(self, db):
+        """Permanently deletes the user from the database."""
+        db.delete(self)
+        db.commit()
+
+    def soft_delete(self): 
+        """Marks the user as inactive."""
+        self.is_active = False
+        self.updated_at = datetime.now(timezone.utc)
 
 
 # ? The Token model is used to store refresh tokens for users.

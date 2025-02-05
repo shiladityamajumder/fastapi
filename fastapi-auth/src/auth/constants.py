@@ -7,6 +7,9 @@ PASSWORD_REGEX = r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*?&]{8,}$"
 # Username can only contain letters, numbers, underscores, and hyphens.
 USERNAME_REGEX = r"^[a-zA-Z0-9_.-]+$"
 
+# email regex
+EMAIL_REGEX = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+
 # Role choices for user permissions
 ROLE_CHOICES = (
     "user",      # Regular user with standard permissions
@@ -25,5 +28,14 @@ ERROR_MESSAGES = {
     "invalid_password": "Password must be at least 8 characters long, contain letters and numbers.",  # Error for invalid password format
     "invalid_username": "Username can only contain letters, numbers, underscores, or dots.",  # Error for invalid username format
     "email_exists": "A user with this email already exists.",  # Error when email is already registered
+    "phone_number_exists": "A user with this phone number already exists.",  # Error when phone number is already registered
     "username_exists": "A user with this username already exists.",  # Error when username is already taken
+    "email_required": "Email is required.",  # Error for missing email
+    "full_name_required": "Full name is required.",  # Error for missing full name
+    "password_required": "Password is required.",  # Error for missing password
+    "invalid_phone_number": "Invalid phone number format.",  # Error for invalid phone number
+    "current_password_required": "Current password is required.",  # Error for missing current password
+    "new_password_required": "New password is required.",  # Error for missing new password
+    "confirm_password_required": "Confirm password is required.",  # Error for missing confirm password
+    "token_required": "Token is required.",  # Error for missing token
 }
