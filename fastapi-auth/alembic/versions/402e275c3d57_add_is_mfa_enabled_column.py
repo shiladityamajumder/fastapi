@@ -1,8 +1,8 @@
-"""Initial migration
+"""add_is_mfa_enabled_column
 
-Revision ID: 521549879ad8
+Revision ID: 402e275c3d57
 Revises: 
-Create Date: 2025-02-05 12:48:21.827041
+Create Date: 2025-02-06 10:24:45.204002
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '521549879ad8'
+revision: str = '402e275c3d57'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -27,14 +27,16 @@ def upgrade() -> None:
     sa.Column('full_name', sa.String(length=255), nullable=False),
     sa.Column('password', sa.String(), nullable=False),
     sa.Column('last_login', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('is_superuser', sa.Boolean(), nullable=True),
-    sa.Column('is_staff', sa.Boolean(), nullable=True),
-    sa.Column('date_joined', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=True),
+    sa.Column('date_joined', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('country_code', sa.String(length=5), nullable=True),
     sa.Column('phone_number', sa.String(length=20), nullable=True),
+    sa.Column('is_mfa_enabled', sa.Boolean(), nullable=True),
+    sa.Column('is_superuser', sa.Boolean(), nullable=True),
+    sa.Column('is_staff', sa.Boolean(), nullable=True),
+    sa.Column('role', sa.String(length=50), nullable=False),
     sa.Column('address', sa.String(length=255), nullable=True),
     sa.Column('city', sa.String(length=100), nullable=True),
     sa.Column('state', sa.String(length=100), nullable=True),
@@ -46,15 +48,54 @@ def upgrade() -> None:
     sa.Column('is_push_notification_enabled', sa.Boolean(), nullable=True),
     sa.Column('is_email_notification_enabled', sa.Boolean(), nullable=True),
     sa.Column('is_sms_notification_enabled', sa.Boolean(), nullable=True),
-    sa.Column('is_two_factor_enabled', sa.Boolean(), nullable=True),
-    sa.Column('role', sa.String(length=50), nullable=False),
+    sa.Column('token_regeneration_code', sa.String(length=255), nullable=True),
     sa.CheckConstraint("role IN ('user', 'admin', 'editor', 'moderator', 'superuser')", name='check_role_validity'),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('token_regeneration_code')
     )
     op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
     op.create_index(op.f('ix_users_full_name'), 'users', ['full_name'], unique=False)
     op.create_index(op.f('ix_users_id'), 'users', ['id'], unique=False)
     op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
+    op.create_table('mfa_settings',
+    sa.Column('id', sa.String(), nullable=False),
+    sa.Column('user_id', sa.String(), nullable=False),
+    sa.Column('mfa_type', sa.String(length=20), nullable=False),
+    sa.Column('mfa_provider', sa.String(length=20), nullable=False),
+    sa.Column('mfa_secret', sa.String(length=255), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('last_modified_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_mfa_settings_id'), 'mfa_settings', ['id'], unique=False)
+    op.create_table('otp_codes',
+    sa.Column('id', sa.String(), nullable=False),
+    sa.Column('user_id', sa.String(), nullable=False),
+    sa.Column('otp_code', sa.String(length=6), nullable=False),
+    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('is_used', sa.Boolean(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('last_modified_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_otp_codes_id'), 'otp_codes', ['id'], unique=False)
+    op.create_table('password_reset_codes',
+    sa.Column('id', sa.String(), nullable=False),
+    sa.Column('user_id', sa.String(), nullable=False),
+    sa.Column('otp_code', sa.String(length=6), nullable=False),
+    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('is_used', sa.Boolean(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('last_modified_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_password_reset_codes_id'), 'password_reset_codes', ['id'], unique=False)
     op.create_table('tokens',
     sa.Column('id', sa.String(), nullable=False),
     sa.Column('user_id', sa.String(), nullable=False),
@@ -63,6 +104,7 @@ def upgrade() -> None:
     sa.Column('jti', sa.String(), nullable=False),
     sa.Column('issued_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('is_blacklisted', sa.Boolean(), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.Column('last_modified_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=True),
@@ -78,6 +120,12 @@ def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_index(op.f('ix_tokens_id'), table_name='tokens')
     op.drop_table('tokens')
+    op.drop_index(op.f('ix_password_reset_codes_id'), table_name='password_reset_codes')
+    op.drop_table('password_reset_codes')
+    op.drop_index(op.f('ix_otp_codes_id'), table_name='otp_codes')
+    op.drop_table('otp_codes')
+    op.drop_index(op.f('ix_mfa_settings_id'), table_name='mfa_settings')
+    op.drop_table('mfa_settings')
     op.drop_index(op.f('ix_users_username'), table_name='users')
     op.drop_index(op.f('ix_users_id'), table_name='users')
     op.drop_index(op.f('ix_users_full_name'), table_name='users')

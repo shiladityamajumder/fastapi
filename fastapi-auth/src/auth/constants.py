@@ -38,4 +38,6 @@ ERROR_MESSAGES = {
     "new_password_required": "New password is required.",  # Error for missing new password
     "confirm_password_required": "Confirm password is required.",  # Error for missing confirm password
     "token_required": "Token is required.",  # Error for missing token
+    "invalid_data_format": "Invalid data format.",  # Error for invalid data format (e.g., schema validation errors)
+    "unexpected_error": "An unexpected error occurred.",  # Error for unexpected server errors
 }
