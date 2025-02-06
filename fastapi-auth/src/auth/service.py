@@ -12,7 +12,15 @@ from fastapi import HTTPException, Depends
 
 # Local application imports
 from .models import User, Token
-from .schemas import UserCreateSchema, UserLoginSchema, LogoutRequestSchema, LogoutRequestSchema, LogoutResponseData, LogoutResponseWrapper
+from .schemas import (
+    UserCreateSchema, UserResponseSchema, AuthTokensSchema, UserAuthResponseSchema, AuthResponseWrapper, 
+    UserLoginSchema, ProfileUpdateRequestSchema, UserProfileResponseData, UserProfileResponseWrapper, 
+    ChangePasswordRequestSchema, ChangePasswordResponseData, ChangePasswordResponseWrapper, 
+    PasswordResetRequestSchema, PasswordResetRequestResponseData, PasswordResetRequestResponseWrapper, 
+    ResetPasswordWithTokenRequestSchema, ResetPasswordResponseData, ResetPasswordResponseWrapper, 
+    LogoutRequestSchema, LogoutResponseData, LogoutResponseWrapper, 
+    ErrorDetails, ErrorResponseWrapper,
+)
 from .constants import ERROR_MESSAGES  # Importing error messages for user feedback
 from .utils import get_current_user
 
@@ -31,7 +39,7 @@ def create_user(db: Session, user_data: UserCreateSchema):
                     or if the password validation fails.
 
     Returns:
-        dict: A dictionary containing the newly created user and their access and refresh tokens.
+        AuthResponseWrapper: The response object with user data, tokens, and status.
     """
 
     # Validate email format
@@ -97,16 +105,28 @@ def create_user(db: Session, user_data: UserCreateSchema):
         # Handle any token generation errors
         raise ValueError(f"Token generation error: {str(e)}")
 
-    return {
-        "user": new_user,
-        "access_token": access_token,
-        "refresh_token": refresh_token
-    }
+    # Construct the response data
+    response_data = UserAuthResponseSchema(
+        tokens=AuthTokensSchema(
+            access=access_token,
+            refresh=refresh_token
+        ),
+        user=UserResponseSchema.model_validate(new_user),
+        status="success",
+        code=201
+    )
+
+    # Wrap the response data in the AuthResponseWrapper
+    return AuthResponseWrapper(
+        data=response_data,
+        message="Registration successful",
+        status=True
+    )
 # *********** ========== End ========== ***********
 
 
 # *********** ========== User Login Service ========== ***********
-def authenticate_user(db: Session, login_data: UserLoginSchema):
+def login_user(db: Session, login_data: UserLoginSchema):
     """
     Authenticate a user based on their email and password using the UserLoginSchema.
 
@@ -118,7 +138,7 @@ def authenticate_user(db: Session, login_data: UserLoginSchema):
         ValueError: If the user is not found or the password is incorrect.
 
     Returns:
-        dict: A dictionary containing the authenticated user and their access and refresh tokens.
+        AuthResponseWrapper: The response object with user data, tokens, and status.
     """
 
     # Validate the login data using UserLoginSchema
@@ -149,26 +169,36 @@ def authenticate_user(db: Session, login_data: UserLoginSchema):
         # Handle any token generation errors
         raise ValueError(f"Token generation error: {str(e)}")
 
-    return {
-        "user": user,
-        "access_token": access_token,
-        "refresh_token": refresh_token
-    }
+    # Construct the response
+    response_data = UserAuthResponseSchema(
+        tokens=AuthTokensSchema(
+            access=access_token,
+            refresh=refresh_token
+        ),
+        user=UserResponseSchema.model_validate(user),
+        status="success",
+        code=200
+    )
+    return AuthResponseWrapper(
+        data=response_data,
+        message="Login successful",
+        status=True
+    )
 # *********** ========== End ========== ***********
 
 
 # *********** ========== User Logout Service ========== ***********
-def logout_user(db: Session, logout_data: LogoutRequestSchema, authorization: str):
+def logout_user(db: Session, user: User, logout_data: LogoutRequestSchema):
     """
     Logs out a user by blacklisting their refresh token and invalidating the access token.
 
     Args:
         db (Session): The database session.
+        user (User): The authenticated user.
         logout_data (LogoutRequestSchema): The logout data containing the refresh token.
-        authorization (str): The Bearer token from the request headers.
 
     Raises:
-        ValueError: If the access token is invalid or the refresh token is not found.
+        ValueError: If the refresh token is not found or already blacklisted.
 
     Returns:
         LogoutResponseWrapper: The response object with status and message.
@@ -182,17 +212,10 @@ def logout_user(db: Session, logout_data: LogoutRequestSchema, authorization: st
     # Extract refresh token from validated data
     refresh_token = validated_data["refresh_token"]
 
-    # Step 1: Validate the access token and extract the user ID
-    try:
-        current_user = get_current_user(authorization, db)  # This will raise an HTTPException if invalid
-        user_id = current_user.id  # Get the user ID from the User object
-    except HTTPException as e:
-        raise ValueError(f"Invalid access token: {str(e.detail)}")
-
-    # Step 2: Verify the refresh token and ensure it belongs to the user
+    # Step 1: Verify the refresh token and ensure it belongs to the user
     refresh_token_entry = db.query(Token).filter(
         Token.token == refresh_token,
-        Token.user_id == user_id,
+        Token.user_id == user.id,  # Use the user ID from the authenticated user
         Token.token_type == "refresh",
         Token.is_blacklisted == False
     ).first()
@@ -200,17 +223,61 @@ def logout_user(db: Session, logout_data: LogoutRequestSchema, authorization: st
     if not refresh_token_entry:
         raise ValueError("Refresh token not found or already blacklisted")
 
-    # Step 3: Blacklist the refresh token
+    # Step 2: Blacklist the refresh token
     refresh_token_entry.is_blacklisted = True
     refresh_token_entry.is_active = False
     refresh_token_entry.last_modified_at = datetime.now(timezone.utc)
     db.commit()
 
-    # Step 4: Return the success response
+    # Step 3: Return the success response
     response_data = LogoutResponseData(status="success", code=200)
     return LogoutResponseWrapper(
         data=response_data,
         message="User logged out successfully",
+        status=True
+    )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Change Password Service ========== ***********
+def change_password_service(db: Session, user: User, change_password_data: ChangePasswordRequestSchema):
+    """
+    Handles the change password functionality for an authenticated user.
+
+    Args:
+        db (Session): The database session.
+        user (User): The authenticated user.
+        change_password_data (ChangePasswordRequestSchema): The change password request data.
+
+    Raises:
+        ValueError: If the current password is incorrect or the new password is the same as the old password.
+
+    Returns:
+        ChangePasswordResponseWrapper: The response object with status and message.
+    """
+    # Validate input data
+    validated_data = change_password_data.model_dump()
+    current_password = validated_data["current_password"]
+    new_password = validated_data["new_password"]
+
+    # Verify current password
+    if not user.verify_password(current_password):
+        raise ValueError(ERROR_MESSAGES["incorrect_current_password"])
+    
+    # Ensure the new password is different from the current password
+    if current_password == new_password:
+        raise ValueError(ERROR_MESSAGES["new_password_same_as_old"])
+    
+    # Update password
+    user.set_password(new_password)
+    user.last_modified_at = datetime.now(timezone.utc)
+    db.commit()
+    
+    # Return success response
+    response_data = ChangePasswordResponseData(status="success", code=200)
+    return ChangePasswordResponseWrapper(
+        data=response_data,
+        message="Password changed successfully",
         status=True
     )
 # *********** ========== End ========== ***********
