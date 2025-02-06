@@ -184,8 +184,8 @@ def logout_user(db: Session, logout_data: LogoutRequestSchema, authorization: st
 
     # Step 1: Validate the access token and extract the user ID
     try:
-        current_user = get_current_user(authorization, db)
-        user_id = current_user["user_id"]
+        current_user = get_current_user(authorization, db)  # This will raise an HTTPException if invalid
+        user_id = current_user.id  # Get the user ID from the User object
     except HTTPException as e:
         raise ValueError(f"Invalid access token: {str(e.detail)}")
 

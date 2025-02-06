@@ -12,7 +12,7 @@ from jwt import PyJWTError
 from sqlalchemy.orm import Session
 
 # Local application imports
-from .models import Token  # Assuming your Token model is in a file named models.py
+from .models import User, Token  # Assuming your Token model is in a file named models.py
 from .dependencies import get_db  # Import your DB session dependency
 
 
@@ -76,16 +76,16 @@ def decode_access_token(token: str) -> dict:
 def get_current_user(
     authorization: Optional[str] = Header(None), 
     db: Session = Depends(get_db)
-):
+) -> User:
     """
-    FastAPI Dependency: Validates access token and retrieves the user ID.
+    FastAPI Dependency: Validates access token and retrieves the user.
 
     Args:
         authorization (str): The Bearer token from request headers.
         db (Session): The database session.
 
     Returns:
-        dict: User information (user_id).
+        User: The authenticated user.
 
     Raises:
         HTTPException: If the token is invalid or user is not found.
@@ -108,5 +108,10 @@ def get_current_user(
     if not user_id:
         raise HTTPException(status_code=401, detail="User ID not found in token")
 
-    return {"user_id": user_id}
+    # Fetch the user from the database
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return user
 # *********** ========== End of Current User Dependency ========== ***********

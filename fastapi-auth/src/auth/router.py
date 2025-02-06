@@ -177,6 +177,7 @@ async def login_user(login_data: UserLoginSchema, db: Session = Depends(get_db))
         )
 # *********** ========== End ========== ***********
 
+
 # *********** ========== Logout Router ========== ***********
 @router.post("/logout", response_model=LogoutResponseWrapper, status_code=status.HTTP_200_OK)
 async def logout(logout_data: LogoutRequestSchema, authorization: str = Header(None), db: Session = Depends(get_db)):
