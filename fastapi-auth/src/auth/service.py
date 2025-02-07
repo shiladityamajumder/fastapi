@@ -23,6 +23,7 @@ from .schemas import (
 )
 from .constants import ERROR_MESSAGES  # Importing error messages for user feedback
 from .utils import get_current_user
+from .emails import send_registration_email, send_password_reset_email
 
 
 # *********** ========== User Registartion Service ========== ***********
@@ -105,6 +106,13 @@ def create_user(db: Session, user_data: UserCreateSchema):
         # Handle any token generation errors
         raise ValueError(f"Token generation error: {str(e)}")
 
+    # Send the registration email asynchronously
+    try:
+        send_registration_email(user_email=new_user.email, user_name=new_user.full_name)
+    except Exception as e:
+        # Log the error instead of failing user registration
+        print(f"Failed to send registration email: {str(e)}")  # Replace with proper logging
+
     # Construct the response data
     response_data = UserAuthResponseSchema(
         tokens=AuthTokensSchema(
@@ -126,7 +134,7 @@ def create_user(db: Session, user_data: UserCreateSchema):
 
 
 # *********** ========== User Login Service ========== ***********
-def login_user(db: Session, login_data: UserLoginSchema):
+def authenticate_user(db: Session, login_data: UserLoginSchema):
     """
     Authenticate a user based on their email and password using the UserLoginSchema.
 
@@ -179,6 +187,7 @@ def login_user(db: Session, login_data: UserLoginSchema):
         status="success",
         code=200
     )
+    
     return AuthResponseWrapper(
         data=response_data,
         message="Login successful",

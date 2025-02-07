@@ -212,7 +212,7 @@ class ChangePasswordRequestSchema(BaseModel):
         
         if new_password and confirm_password:
             if new_password != confirm_password:
-                raise ValueError(ERROR_MESSAGES["passwords_do_not_match"])
+                raise ValueError(ERROR_MESSAGES["passwords_not_same"])
             if not re.match(PASSWORD_REGEX, new_password):
                 raise ValueError(ERROR_MESSAGES["invalid_password"])
         

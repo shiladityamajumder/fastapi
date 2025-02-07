@@ -23,7 +23,7 @@ from .schemas import (
     ErrorDetails, ErrorResponseWrapper,
     )
 from .service import ( 
-    create_user, login_user, logout_user, change_password_service
+    create_user, authenticate_user, logout_user, change_password_service
     )
 from .dependencies import get_db
 from .utils import get_current_user
@@ -101,7 +101,7 @@ async def register_user(user_data: UserCreateSchema, db: Session = Depends(get_d
 
 
 # *********** ========== Login Router ========== ***********
-@router.post("/login", response_model=UserAuthResponseSchema, status_code=status.HTTP_200_OK)
+@router.post("/login", response_model=AuthResponseWrapper, status_code=status.HTTP_200_OK)
 async def login_user(login_data: UserLoginSchema, db: Session = Depends(get_db)):
     """
     Authenticate a user and generate access and refresh tokens.
@@ -119,8 +119,9 @@ async def login_user(login_data: UserLoginSchema, db: Session = Depends(get_db))
 
     try:
         # Authenticate the user using the service function
-        return login_user(db, login_data)  # Simply return the response from the service
-
+        auth_response = authenticate_user(db, login_data)  # Await the coroutine
+        return auth_response  # Simply return the response from the service
+    
     except ValueError as e:
         # Specific authentication failure due to invalid credentials
         raise HTTPException(
@@ -133,7 +134,7 @@ async def login_user(login_data: UserLoginSchema, db: Session = Depends(get_db))
                 ),
                 message="Authentication failed due to invalid credentials",
                 status=False
-            )
+            ).model_dump()  # Convert to dictionary
         )
     except ValidationError as e:
         # Schema validation errors
@@ -147,7 +148,7 @@ async def login_user(login_data: UserLoginSchema, db: Session = Depends(get_db))
                 ),
                 message=str(e),
                 status=False
-            )
+            ).model_dump()  # Convert to dictionary
         )
     except Exception as e:
         # Catch all unexpected errors
@@ -161,7 +162,7 @@ async def login_user(login_data: UserLoginSchema, db: Session = Depends(get_db))
                 ),
                 message="Authentication failed",
                 status=False
-            )
+            ).model_dump()  # Convert to dictionary
         )
 # *********** ========== End ========== ***********
 
@@ -184,7 +185,7 @@ async def logout(logout_data: LogoutRequestSchema, user: User = Depends(is_authe
         HTTPException: If the access token is invalid or the refresh token is not found.
     """
     try:
-        return logout_user(db, logout_data, user)  # Pass the user object instead of the authorization header
+        return logout_user(db, user, logout_data)  # Pass the user object instead of the authorization header
     except ValueError as e:
         # Specific logout failure due to invalid access token or refresh token
         raise HTTPException(

@@ -40,4 +40,7 @@ ERROR_MESSAGES = {
     "token_required": "Token is required.",  # Error for missing token
     "invalid_data_format": "Invalid data format.",  # Error for invalid data format (e.g., schema validation errors)
     "unexpected_error": "An unexpected error occurred.",  # Error for unexpected server errors
+    "incorrect_current_password": "The current password you entered is incorrect. Please try again.",  # Error for incorrect current password
+    "new_password_same_as_old": "The new password cannot be the same as the old password. Please choose a different password.",  # Error for new password being the same as the old password
+    "passwords_not_same": "Passwords do not match. Please ensure both passwords are identical.",  # Error when passwords entered do not match
 }

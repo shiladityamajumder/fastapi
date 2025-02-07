@@ -1,4 +1,4 @@
-# src/auth/utils.py
+
 
 # Standard library imports
 from datetime import datetime, timezone
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 # Local application imports
 from .models import User, Token  # Assuming your Token model is in a file named models.py
 from .dependencies import get_db  # Import your DB session dependency
+
 
 
 # Secret key and algorithm for JWT
