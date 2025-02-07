@@ -282,14 +282,22 @@ class PasswordResetRequestResponseWrapper(BaseModel):
 
 # ? ResetPasswordWithTokenRequestSchema - Schema for resetting password using token => Request Body
 class ResetPasswordWithTokenRequestSchema(BaseModel):
-    token: str
+    email: EmailStr
+    otp: int
     new_password: str = Field(..., min_length=8, max_length=128)
 
-    # ? Field Validator for token
-    @field_validator("token")
-    def validate_token(cls, value):
+    # ? Field Validator for email
+    @field_validator("email")
+    def validate_email(cls, value):
         if not value:
-            raise ValueError(ERROR_MESSAGES["token_required"])
+            raise ValueError(ERROR_MESSAGES["email_required"])
+        return value
+
+    # ? Field Validator for token
+    @field_validator("otp")
+    def validate_otp(cls, value):
+        if not value:
+            raise ValueError(ERROR_MESSAGES["otp_required"])
         return value
 
     # ? Field Validator for new_password

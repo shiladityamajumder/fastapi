@@ -74,10 +74,7 @@ def decode_access_token(token: str) -> dict:
 
 
 # *********** ========== Current User Dependency ========== ***********
-def get_current_user(
-    authorization: Optional[str] = Header(None), 
-    db: Session = Depends(get_db)
-) -> User:
+def get_current_user(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)) -> User:
     """
     FastAPI Dependency: Validates access token and retrieves the user.
 

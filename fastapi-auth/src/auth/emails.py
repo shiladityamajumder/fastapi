@@ -18,11 +18,10 @@ from src.config import settings
 # Fix the template path to point inside `src/templates/`
 BASE_DIR = Path(__file__).resolve().parent.parent.parent  # Go up 3 levels
 TEMPLATES_DIR = BASE_DIR / "templates"  # Now points to `fastapi-auth/templates`
-LOGO_PATH = BASE_DIR / "assets" / "logo.png"
+LOGO_FILE = "logo.png"
+LOGO_PATH = BASE_DIR / "assets" / LOGO_FILE
 
-print("********************************")
-print(LOGO_PATH)
-print("********************************")
+
 # *********** ========== Email Sending Utility ========== ***********
 def send_email(to_email: str, subject: str, template_name: str, context: dict, attachments=None):
     """
@@ -111,7 +110,7 @@ def send_registration_email(user_email: str, user_name: str):
             logo_data = logo_file.read()
             image = MIMEImage(logo_data)
             image.add_header("Content-ID", f"<{logo_cid}>")  # Reference in HTML
-            image.add_header("Content-Disposition", "inline", filename="logo.png")
+            image.add_header("Content-Disposition", "inline", filename=LOGO_FILE)
             attachments.append(image)  # Add to the attachments list
     else:
         print(f"⚠️ Warning: Logo not found at {logo_path}")  # Debugging log
@@ -137,14 +136,44 @@ def send_registration_email(user_email: str, user_name: str):
 
 
 # *********** ========== Password Reset Email Utility ========== ***********
-def send_password_reset_email(user_email: str, user_name: str, reset_link: str):
+def send_password_reset_email(user_email: str, user_name: str, otp: str):
     """
-    Send a password reset email.
+    Send a password reset email, embedding the logo.
     """
-    send_email(
-        to_email=user_email,
-        subject="Reset Your Password",
-        template_name="password_reset_email.html",
-        context={"user_name": user_name, "reset_link": reset_link}
-    )
+    print(f"Attempting to send password reset email to: {user_email}")  # Debugging log
+
+    # Path to the embedded logo
+    logo_path = LOGO_PATH
+    logo_cid = "logo"  # Content ID for embedding
+
+    # Read the logo image if it exists
+    attachments = []
+    if logo_path.exists():
+        with open(logo_path, "rb") as logo_file:
+            logo_data = logo_file.read()
+            image = MIMEImage(logo_data)
+            image.add_header("Content-ID", f"<{logo_cid}>")  # Reference in HTML
+            image.add_header("Content-Disposition", "inline", filename=LOGO_FILE)
+            attachments.append(image)  # Add to the attachments list
+    else:
+        print(f"⚠️ Warning: Logo not found at {logo_path}")  # Debugging log
+
+    print(f"Email attachments: {attachments}")  # Debugging log
+    
+    try:
+        send_email(
+            to_email=user_email,
+            subject="Reset Your Password",
+            template_name="password_reset_email.html",
+            context={
+                "user_name": user_name,
+                "otp": otp,
+                "current_year": datetime.now().year,
+                "logo_cid": logo_cid,
+            },
+            attachments=attachments
+        )
+        print("✅ Password reset email sent successfully.")
+    except Exception as e:
+        print(f"❌ Error inside send_email(): {str(e)}")
 # *********** ========== End of Password Reset Email Utility ========== ***********

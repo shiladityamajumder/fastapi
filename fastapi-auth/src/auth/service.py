@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException, Depends
 
 # Local application imports
-from .models import User, Token
+from .models import User, Token, PasswordReset
 from .schemas import (
     UserCreateSchema, UserResponseSchema, AuthTokensSchema, UserAuthResponseSchema, AuthResponseWrapper, 
     UserLoginSchema, ProfileUpdateRequestSchema, UserProfileResponseData, UserProfileResponseWrapper, 
@@ -289,4 +289,80 @@ def change_password_service(db: Session, user: User, change_password_data: Chang
         message="Password changed successfully",
         status=True
     )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Send Password Reset OTP Service ========== ***********
+def send_password_reset_otp_service(db: Session, request_data: PasswordResetRequestSchema):
+    user = db.query(User).filter(User.email == request_data.email).first()
+    if not user:
+        raise ValueError(ERROR_MESSAGES["user_not_found"])
+    
+    otp = PasswordReset.generate_otp()
+
+    expiry_time = datetime.now(timezone.utc) + timedelta(minutes=10)
+    
+    password_reset_entry = PasswordReset(
+        user_id=user.id,
+        otp_code=otp,
+        expires_at=expiry_time,
+        is_used=False,
+        is_active=True
+    )
+
+    db.add(password_reset_entry)
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()  # Rollback in case of error
+        raise ValueError("Database error: Could not save OTP")
+
+    
+    send_password_reset_email(user_email=user.email, user_name=user.full_name, otp=otp)
+    
+    response_data = PasswordResetRequestResponseWrapper(
+        data=PasswordResetRequestResponseData(email=user.email, status="success", code=200),
+        message="OTP sent successfully",
+        status=True
+    )
+    return response_data
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Reset Password Service ========== ***********
+def reset_password_service(db: Session, request_data: ResetPasswordWithTokenRequestSchema):
+    user = db.query(User).filter(User.email == request_data.email).first()
+    if not user:
+        print(f"User not found for email: {request_data.email}")
+        raise ValueError(ERROR_MESSAGES["user_not_found"])
+
+    otp_entry = (
+        db.query(PasswordReset)
+        .filter(
+            PasswordReset.user_id == user.id,
+            PasswordReset.otp_code == request_data.otp,
+            PasswordReset.is_active == True
+        )
+        .order_by(PasswordReset.expires_at.desc())  # Get latest OTP
+        .first()
+    )
+    
+    if not otp_entry or not otp_entry.is_valid(request_data.otp):
+        print(f"OTP '{request_data.otp}' not found or inactive for user {request_data.email}!")
+        raise ValueError("Invalid or expired OTP")
+    
+    user.set_password(request_data.new_password)
+    user.last_modified_at = datetime.now(timezone.utc)
+    otp_entry.is_used = True
+    otp_entry.is_active = False
+    
+    db.commit()
+    
+    response_data = ResetPasswordResponseWrapper(
+        data=ResetPasswordResponseData(status="success", code=200),
+        message="Password reset successfully",
+        status=True
+    )
+    return response_data
 # *********** ========== End ========== ***********

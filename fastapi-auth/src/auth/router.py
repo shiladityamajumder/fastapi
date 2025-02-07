@@ -23,12 +23,14 @@ from .schemas import (
     ErrorDetails, ErrorResponseWrapper,
     )
 from .service import ( 
-    create_user, authenticate_user, logout_user, change_password_service
+    create_user, authenticate_user, logout_user, change_password_service, 
+    send_password_reset_otp_service, reset_password_service
     )
 from .dependencies import get_db
 from .utils import get_current_user
 from .constants import ERROR_MESSAGES
 from .permissions import is_authenticated
+import traceback  # Add this for detailed error logs
 
 
 # ? Initialize the router for authentication
@@ -286,6 +288,59 @@ async def change_password(change_password_data: ChangePasswordRequestSchema, use
                     code=status.HTTP_500_INTERNAL_SERVER_ERROR
                 ),
                 message="Change password failed",
+                status=False
+            ).model_dump()
+        )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Send Password Reset OTP Router ========== ***********
+@router.post("/send-password-reset-otp", response_model=PasswordResetRequestResponseWrapper, status_code=status.HTTP_200_OK)
+async def send_reset_otp(request_data: PasswordResetRequestSchema, db: Session = Depends(get_db)):
+    try:
+        return send_password_reset_otp_service(db, request_data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(details=str(e), status="error", code=status.HTTP_400_BAD_REQUEST),
+                message="Failed to send OTP",
+                status=False
+            ).model_dump()
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(details="Unexpected error", status="error", code=status.HTTP_500_INTERNAL_SERVER_ERROR),
+                message="Failed to send OTP",
+                status=False
+            ).model_dump()
+        )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Reset Password Router ========== ***********
+@router.post("/reset-password", response_model=ResetPasswordResponseWrapper, status_code=status.HTTP_200_OK)
+async def reset_password(request_data: ResetPasswordWithTokenRequestSchema, db: Session = Depends(get_db)):
+    try:
+        return reset_password_service(db, request_data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(details=str(e), status="error", code=status.HTTP_400_BAD_REQUEST),
+                message="Password reset failed",
+                status=False
+            ).model_dump()
+        )
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(details="Unexpected error", status="error", code=status.HTTP_500_INTERNAL_SERVER_ERROR),
+                message="Password reset failed",
                 status=False
             ).model_dump()
         )

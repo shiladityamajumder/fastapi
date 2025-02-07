@@ -43,4 +43,5 @@ ERROR_MESSAGES = {
     "incorrect_current_password": "The current password you entered is incorrect. Please try again.",  # Error for incorrect current password
     "new_password_same_as_old": "The new password cannot be the same as the old password. Please choose a different password.",  # Error for new password being the same as the old password
     "passwords_not_same": "Passwords do not match. Please ensure both passwords are identical.",  # Error when passwords entered do not match
+    "user_not_found": "User not found.",  # Error when user is not found
 }
