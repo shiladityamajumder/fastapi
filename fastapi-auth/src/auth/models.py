@@ -50,9 +50,9 @@ class User(Base):
     password = Column(String, nullable=False)
     last_login = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
-    date_joined = Column(DateTime(timezone=True), server_default=func.now())
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    date_joined = Column(DateTime(timezone=True), server_default=func.utcnow())
+    created_at = Column(DateTime(timezone=True), server_default=func.utcnow())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.utcnow())
     
     # * Optional Fields
     country_code = Column(String(5), nullable=True)
@@ -267,8 +267,8 @@ class Token(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     is_blacklisted = Column(Boolean, default=False)  # For blacklisting tokens
     
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    last_modified_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.utcnow())
+    last_modified_at = Column(DateTime(timezone=True), onupdate=func.utcnow())
     is_active = Column(Boolean, default=True)
 
     user = relationship("User", back_populates="tokens")
@@ -301,8 +301,8 @@ class OTP(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     is_used = Column(Boolean, default=False)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    last_modified_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.utcnow())
+    last_modified_at = Column(DateTime(timezone=True), onupdate=func.utcnow())
     is_active = Column(Boolean, default=True)
 
     user = relationship("User")
@@ -342,8 +342,8 @@ class MFA(Base):
     mfa_provider = Column(String(20), nullable=False)
     mfa_secret = Column(String(255), nullable=False)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    last_modified_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.utcnow())
+    last_modified_at = Column(DateTime(timezone=True), onupdate=func.utcnow())
     is_active = Column(Boolean, default=True)
 
     user = relationship("User")
@@ -375,8 +375,8 @@ class PasswordReset(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     is_used = Column(Boolean, default=False)
     
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    last_modified_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.utcnow())
+    last_modified_at = Column(DateTime(timezone=True), onupdate=func.utcnow())
     is_active = Column(Boolean, default=True)
     
     user = relationship("User")

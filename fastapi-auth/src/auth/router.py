@@ -20,11 +20,14 @@ from .schemas import (
     PasswordResetRequestSchema, PasswordResetRequestResponseData, PasswordResetRequestResponseWrapper, 
     ResetPasswordWithTokenRequestSchema, ResetPasswordResponseData, ResetPasswordResponseWrapper, 
     LogoutRequestSchema, LogoutResponseData, LogoutResponseWrapper, 
+    RefreshTokenRequestSchema, RefreshTokenRegenerateSchema,
     ErrorDetails, ErrorResponseWrapper,
     )
 from .service import ( 
     create_user, authenticate_user, logout_user, change_password_service, 
-    send_password_reset_otp_service, reset_password_service
+    send_password_reset_otp_service, reset_password_service, 
+    get_user_profile_service, update_user_profile_service,
+    refresh_access_token, regenerate_access_token,
     )
 from .dependencies import get_db
 from .utils import get_current_user
@@ -341,6 +344,245 @@ async def reset_password(request_data: ResetPasswordWithTokenRequestSchema, db: 
             detail=ErrorResponseWrapper(
                 data=ErrorDetails(details="Unexpected error", status="error", code=status.HTTP_500_INTERNAL_SERVER_ERROR),
                 message="Password reset failed",
+                status=False
+            ).model_dump()
+        )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Get User Profile ========== ***********
+@router.get("/profile", response_model=UserProfileResponseWrapper, status_code=status.HTTP_200_OK)
+async def get_user_profile(user: User = Depends(is_authenticated), db: Session = Depends(get_db)):
+    """
+    Get the currently authenticated user's profile.
+
+    Args:
+        user (User): The authenticated user.
+        db (Session): The database session.
+
+    Returns:
+        UserProfileResponseWrapper: The user's profile data.
+
+    Raises:
+        HTTPException: If user retrieval fails.
+    """
+
+    try:
+        return get_user_profile_service(db, user)
+    
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=str(e),
+                    status="error",
+                    code=status.HTTP_404_NOT_FOUND
+                ),
+                message="User not found",
+                status=False
+            ).model_dump()  # Convert to dictionary
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=ERROR_MESSAGES["unexpected_error"],
+                    status="error",
+                    code=status.HTTP_500_INTERNAL_SERVER_ERROR
+                ),
+                message="Failed to retrieve user profile",
+                status=False
+            ).model_dump()  # Convert to dictionary
+        )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Update User Profile ========== ***********
+@router.patch("/update-profile", response_model=UserProfileResponseWrapper, status_code=status.HTTP_200_OK)
+async def update_user_profile(update_data: ProfileUpdateRequestSchema, user: User = Depends(is_authenticated), db: Session = Depends(get_db)):
+    """
+    Update the currently authenticated user's profile.
+
+    Args:
+        update_data (ProfileUpdateRequestSchema): The updated profile data.
+        user (User): The authenticated user.
+        db (Session): The database session.
+
+    Returns:
+        UserProfileResponseWrapper: The updated user's profile.
+
+    Raises:
+        HTTPException: If the update fails.
+    """
+
+    try:
+        return update_user_profile_service(db, user, update_data)
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=str(e),
+                    status="error",
+                    code=status.HTTP_400_BAD_REQUEST
+                ),
+                message="Profile update failed",
+                status=False
+            ).model_dump()
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=ERROR_MESSAGES["unexpected_error"],
+                    status="error",
+                    code=status.HTTP_500_INTERNAL_SERVER_ERROR
+                ),
+                message="Profile update failed",
+                status=False
+            ).model_dump()
+        )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Refresh Access Token Router ========== ***********
+@router.post("/token/refresh", response_model=AuthResponseWrapper, status_code=status.HTTP_200_OK)
+async def refresh_access_token_route(refresh_data: RefreshTokenRequestSchema, db: Session = Depends(get_db)):
+    """
+    Refresh the access token using a valid refresh token.
+
+    Args:
+        refresh_data (RefreshTokenRequestSchema): The request body containing the refresh token.
+        db (Session): The database session.
+
+    Returns:
+        AuthResponseWrapper: The response object containing the new access token and user details.
+
+    Raises:
+        HTTPException: If the refresh token is invalid or expired.
+    """
+    
+    try:
+        # Call the service to refresh the access token
+        response = refresh_access_token(db, refresh_data)
+        return response  # Return the service response directly
+
+    except ValueError as e:
+        # Specific failure due to invalid or expired token
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=str(e),
+                    status="error",
+                    code=status.HTTP_401_UNAUTHORIZED
+                ),
+                message="Token refresh failed",
+                status=False
+            ).model_dump()
+        )
+
+    except ValidationError as e:
+        # Schema validation errors
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=ERROR_MESSAGES["invalid_data_format"],
+                    status="error",
+                    code=status.HTTP_422_UNPROCESSABLE_ENTITY
+                ),
+                message=str(e),
+                status=False
+            ).model_dump()
+        )
+
+    except Exception as e:
+        # Catch-all for unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=ERROR_MESSAGES["unexpected_error"],
+                    status="error",
+                    code=status.HTTP_500_INTERNAL_SERVER_ERROR
+                ),
+                message="Token refresh failed due to an internal error",
+                status=False
+            ).model_dump()
+        )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Regenerate Access Token Router ========== ***********
+@router.post("/token/regenerate", response_model=AuthResponseWrapper, status_code=status.HTTP_200_OK)
+async def regenerate_access_token_route(regenerate_data: RefreshTokenRegenerateSchema, db: Session = Depends(get_db)):
+    """
+    Regenerate a new access token using a valid refresh token and token regeneration code.
+
+    Args:
+        regenerate_data (RefreshTokenRegenerateSchema): The request body containing the refresh token and regeneration code.
+        db (Session): The database session.
+
+    Returns:
+        AuthResponseWrapper: The response object containing the new access token and user details.
+
+    Raises:
+        HTTPException: If the refresh token or regeneration code is invalid.
+    """
+
+    try:
+        # Call the service to regenerate the access token
+        response = regenerate_access_token(db, regenerate_data)
+        return response  # Return the service response directly
+
+    except ValueError as e:
+        # Specific failure due to invalid token or regeneration code
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=str(e),
+                    status="error",
+                    code=status.HTTP_401_UNAUTHORIZED
+                ),
+                message="Token regeneration failed",
+                status=False
+            ).model_dump()
+        )
+
+    except ValidationError as e:
+        # Schema validation errors
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=ERROR_MESSAGES["invalid_data_format"],
+                    status="error",
+                    code=status.HTTP_422_UNPROCESSABLE_ENTITY
+                ),
+                message=str(e),
+                status=False
+            ).model_dump()
+        )
+
+    except Exception as e:
+        # Catch-all for unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=ERROR_MESSAGES["unexpected_error"],
+                    status="error",
+                    code=status.HTTP_500_INTERNAL_SERVER_ERROR
+                ),
+                message="Token regeneration failed due to an internal error",
                 status=False
             ).model_dump()
         )

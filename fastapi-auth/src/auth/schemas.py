@@ -24,6 +24,12 @@ class UserCreateSchema(BaseModel):
     country_code: Optional[str] = Field(None, max_length=5)
     phone_number: Optional[str] = Field(None, max_length=20)
 
+    # ? Convert email to lowercase before validation
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value):
+        return value.lower().strip() if value else value
+    
     # ? Model Validator for checking if passwords match
     @model_validator(mode="before")
     def check_passwords_match(cls, values):
@@ -124,6 +130,12 @@ class UserLoginSchema(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
 
+    # ? Convert email to lowercase before validation
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value):
+        return value.lower().strip() if value else value
+
     # ? Field Validator for password
     @field_validator("password")
     def validate_password(cls, value):
@@ -179,6 +191,23 @@ class ProfileUpdateRequestSchema(BaseModel):
 
     class Config:
         orm_mode = True  # Allows compatibility with ORM models
+
+
+# ? RefreshTokenRequestSchema - Schema for requesting a new access token using refresh_token => Request Body
+class RefreshTokenRequestSchema(BaseModel):
+    refresh_token: str = Field(..., title="Refresh Token", description="Valid refresh token to obtain a new access token.")
+
+    class Config:
+        orm_mode = True
+
+
+# ? RefreshTokenRegenerateSchema - Schema for regenerating refresh token with token_regeneration_code => Request Body
+class RefreshTokenRegenerateSchema(BaseModel):
+    refresh_token: str = Field(..., title="Refresh Token", description="Valid refresh token for re-authentication.")
+    token_regeneration_code: str = Field(..., title="Token Regeneration Code", description="Secure code used to regenerate refresh token.")
+
+    class Config:
+        orm_mode = True
 
 
 # ! UserProfileResponseData - Data section inside the response => Response Body

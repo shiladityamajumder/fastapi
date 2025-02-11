@@ -19,6 +19,7 @@ from .schemas import (
     PasswordResetRequestSchema, PasswordResetRequestResponseData, PasswordResetRequestResponseWrapper, 
     ResetPasswordWithTokenRequestSchema, ResetPasswordResponseData, ResetPasswordResponseWrapper, 
     LogoutRequestSchema, LogoutResponseData, LogoutResponseWrapper, 
+    RefreshTokenRequestSchema, RefreshTokenRegenerateSchema,
     ErrorDetails, ErrorResponseWrapper,
 )
 from .constants import ERROR_MESSAGES  # Importing error messages for user feedback
@@ -383,4 +384,182 @@ def reset_password_service(db: Session, request_data: ResetPasswordWithTokenRequ
         status=True
     )
     return response_data
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Get User Profile Service ========== ***********
+def get_user_profile_service(db: Session, user: User):
+    """
+    Fetch the authenticated user's profile details.
+
+    Args:
+        db (Session): Database session.
+        user (User): The authenticated user.
+
+    Returns:
+        UserProfileResponseWrapper: The user's profile details.
+    """
+
+    if not user:
+        raise ValueError(ERROR_MESSAGES["user_not_found"])
+
+    user_data = UserProfileResponseData(
+        user=user,
+        status="success",
+        code=200
+    )
+
+    return UserProfileResponseWrapper(
+        data=user_data,
+        message="User profile retrieved successfully",
+        status=True
+    )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Update User Profile Service ========== ***********
+def update_user_profile_service(db: Session, user: User, update_data: ProfileUpdateRequestSchema):
+    """
+    Update the authenticated user's profile information.
+
+    Args:
+        db (Session): Database session.
+        user (User): The authenticated user.
+        update_data (ProfileUpdateRequestSchema): The updated user data.
+
+    Returns:
+        UserProfileResponseWrapper: The updated user's profile details.
+    """
+
+    # Validate the input data
+    try:
+        validated_data = update_data.model_dump(exclude_unset=True)  # Convert schema to dictionary
+    except Exception as e:
+        raise ValueError(f"Invalid profile update data: {str(e)}")
+
+    if not validated_data:
+        raise ValueError(ERROR_MESSAGES["no_fields_provided"])
+
+    # Update user attributes
+    for key, value in validated_data.items():
+        setattr(user, key, value)
+
+    user.updated_at = datetime.now(timezone.utc)
+
+    try:
+        db.commit()
+        db.refresh(user)  # Refresh the user instance to get updated data
+    except Exception:
+        db.rollback()
+        raise ValueError(ERROR_MESSAGES["db_update_failed"])
+
+    return UserProfileResponseWrapper(
+        data=UserProfileResponseData(
+            user=user,
+            status="success",
+            code=200
+        ),
+        message="Profile updated successfully",
+        status=True
+    )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Refresh Access Token Service ========== ***********
+def refresh_access_token(db: Session, refresh_data: RefreshTokenRequestSchema):
+    """
+    Generate a new access token using a valid refresh token.
+
+    Args:
+        db (Session): The database session.
+        refresh_data (RefreshTokenRequestSchema): The request data containing the refresh token.
+
+    Raises:
+        ValueError: If the refresh token is invalid or expired.
+
+    Returns:
+        AuthResponseWrapper: Response object with user data and new access token.
+    """
+
+    # Verify the refresh token
+    refresh_token_payload = User.verify_refresh_token(refresh_data.refresh_token, db)
+    if not refresh_token_payload:
+        raise ValueError("Invalid or expired refresh token.")
+
+    # Retrieve user from the database
+    user = db.query(User).filter_by(id=refresh_token_payload["user_id"]).first()
+    if not user:
+        raise ValueError("User not found.")
+
+    # Generate a new access token
+    access_token = user.generate_access_token()
+
+    # Construct response data
+    response_data = UserAuthResponseSchema(
+        tokens=AuthTokensSchema(
+            access=access_token,
+            refresh=refresh_data.refresh_token  # Reusing the provided refresh token
+        ),
+        user=UserResponseSchema.model_validate(user),
+        status="success",
+        code=200
+    )
+
+    return AuthResponseWrapper(
+        data=response_data,
+        message="Access token refreshed successfully.",
+        status=True
+    )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Regenerate Access Token Service ========== ***********
+def regenerate_access_token(db: Session, regenerate_data: RefreshTokenRegenerateSchema):
+    """
+    Regenerate a new access token using a valid refresh token and token regeneration code.
+
+    Args:
+        db (Session): The database session.
+        regenerate_data (RefreshTokenRegenerateSchema): The request data containing refresh token and regeneration code.
+
+    Raises:
+        ValueError: If the refresh token is invalid, the user is not found, or the regeneration code is incorrect.
+
+    Returns:
+        AuthResponseWrapper: Response object with user data and new access token.
+    """
+
+    # Verify the refresh token
+    refresh_token_payload = User.verify_refresh_token(regenerate_data.refresh_token, db)
+    if not refresh_token_payload:
+        raise ValueError("Invalid or expired refresh token.")
+
+    # Retrieve user from the database
+    user = db.query(User).filter_by(id=refresh_token_payload["user_id"]).first()
+    if not user:
+        raise ValueError("User not found.")
+
+    # Validate the token regeneration code
+    if user.token_regeneration_code != regenerate_data.token_regeneration_code:
+        raise ValueError("Invalid token regeneration code.")
+
+    # Generate a new access token
+    access_token = user.generate_access_token()
+
+    # Construct response data
+    response_data = UserAuthResponseSchema(
+        tokens=AuthTokensSchema(
+            access=access_token,
+            refresh=regenerate_data.refresh_token  # Reusing the provided refresh token
+        ),
+        user=UserResponseSchema.model_validate(user),
+        status="success",
+        code=200
+    )
+
+    return AuthResponseWrapper(
+        data=response_data,
+        message="Access token regenerated successfully.",
+        status=True
+    )
 # *********** ========== End ========== ***********
