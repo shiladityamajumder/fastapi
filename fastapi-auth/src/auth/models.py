@@ -388,7 +388,12 @@ class PasswordReset(Base):
     
     def is_valid(self, provided_otp):
         expires_at = self.expires_at.replace(tzinfo=timezone.utc) if self.expires_at.tzinfo is None else self.expires_at
-        return not self.is_used and expires_at > datetime.now(timezone.utc) and self.otp_code == provided_otp
+        return (
+            not self.is_used and 
+            self.is_active and
+            expires_at > datetime.now(timezone.utc) 
+            and int(self.otp_code) == int(provided_otp)
+            )
     
     def hard_delete(self, db):
         """Permanently deletes the password reset code from the database."""

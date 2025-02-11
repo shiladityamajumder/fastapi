@@ -297,9 +297,28 @@ def send_password_reset_otp_service(db: Session, request_data: PasswordResetRequ
     user = db.query(User).filter(User.email == request_data.email).first()
     if not user:
         raise ValueError(ERROR_MESSAGES["user_not_found"])
-    
-    otp = PasswordReset.generate_otp()
 
+    # Check the most recent password reset request for this user
+    latest_reset_entry = (
+        db.query(PasswordReset)
+        .filter(PasswordReset.user_id == user.id)
+        .order_by(PasswordReset.created_at.desc())
+        .first()
+    )
+
+    if latest_reset_entry:
+        # Ensure created_at is not None
+        if latest_reset_entry.created_at is None:
+            raise ValueError("Invalid password reset record: missing created_at timestamp.")
+
+        # Ensure created_at has timezone info
+        last_request_time = latest_reset_entry.created_at.replace(tzinfo=timezone.utc) if latest_reset_entry.created_at.tzinfo is None else latest_reset_entry.created_at
+        time_since_last_request = datetime.now(timezone.utc) - last_request_time
+        
+        if time_since_last_request < timedelta(minutes=2):
+            raise ValueError("Please wait at least 2 minutes before requesting a new OTP.")
+
+    otp = PasswordReset.generate_otp()
     expiry_time = datetime.now(timezone.utc) + timedelta(minutes=10)
     
     password_reset_entry = PasswordReset(
@@ -307,7 +326,8 @@ def send_password_reset_otp_service(db: Session, request_data: PasswordResetRequ
         otp_code=otp,
         expires_at=expiry_time,
         is_used=False,
-        is_active=True
+        is_active=True,
+        created_at=datetime.now(timezone.utc)
     )
 
     db.add(password_reset_entry)
@@ -347,9 +367,7 @@ def reset_password_service(db: Session, request_data: ResetPasswordWithTokenRequ
         .order_by(PasswordReset.expires_at.desc())  # Get latest OTP
         .first()
     )
-    
     if not otp_entry or not otp_entry.is_valid(request_data.otp):
-        print(f"OTP '{request_data.otp}' not found or inactive for user {request_data.email}!")
         raise ValueError("Invalid or expired OTP")
     
     user.set_password(request_data.new_password)
