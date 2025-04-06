@@ -7,7 +7,7 @@ from datetime import datetime
 # Third-party library imports
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator, constr
 from pydantic_core.core_schema import FieldValidationInfo
-from typing import Optional, Literal
+from typing import Optional, Literal, List, Dict, Any
 
 # Local application imports
 from .constants import PASSWORD_REGEX, USERNAME_REGEX, ERROR_MESSAGES
@@ -95,6 +95,7 @@ class UserResponseSchema(BaseModel):
     is_email_notification_enabled: bool
     is_sms_notification_enabled: bool
     is_mfa_enabled: bool  # Renamed field for MFA
+    preferred_mfa_method: Optional[str] = None
     role: str
 
     class Config:
@@ -122,6 +123,14 @@ class AuthResponseWrapper(BaseModel):
     message: str
     status: bool
 # *********** ========== End ========== *********** 
+
+
+
+
+
+
+
+
 
 
 # *********** ========== Schemas for User Login, Profile Update ========== ***********
@@ -169,6 +178,7 @@ class ProfileUpdateRequestSchema(BaseModel):
     profile_picture: Optional[str] = None
     bio: Optional[str] = None
     is_mfa_enabled: Optional[bool] = None
+    preferred_mfa_method: Optional[str] = None
     is_superuser: Optional[bool] = None
     is_staff: Optional[bool] = None
     role: Optional[str] = None
@@ -226,6 +236,14 @@ class UserProfileResponseWrapper(BaseModel):
 # *********** ========== End ========== ***********
 
 
+
+
+
+
+
+
+
+
 # *********** ========== Schemas for Change Password ========== ***********
 # ? ChangePasswordRequestSchema - Schema for user change password request => Request Body
 class ChangePasswordRequestSchema(BaseModel):
@@ -281,6 +299,14 @@ class ChangePasswordResponseWrapper(BaseModel):
     message: str
     status: bool
 # *********** ========== End ========== ***********
+
+
+
+
+
+
+
+
 
 
 # *********** ========== Schemas for Password Reset ========== ***********
@@ -351,6 +377,14 @@ class ResetPasswordResponseWrapper(BaseModel):
 # *********** ========== End ========== *********** 
 
 
+
+
+
+
+
+
+
+
 # *********** ========== Schemas for Logout ========== ***********
 # ? LogoutRequestSchema - Schema for logout request => Request Body
 class LogoutRequestSchema(BaseModel):
@@ -377,6 +411,14 @@ class LogoutResponseWrapper(BaseModel):
 # *********** ========== End ========== *********** 
 
 
+
+
+
+
+
+
+
+
 # *********** ========== Schemas for Error => Response Body ========== ***********
 # ? Define the structure for the error details
 class ErrorDetails(BaseModel):
@@ -390,4 +432,110 @@ class ErrorResponseWrapper(BaseModel):
     data: ErrorDetails  # The actual error details
     message: str  # A general error message, e.g., "Validation error", "Server error"
     status: bool  # False indicates an error status
+# *********** ========== End ========== ***********
+
+
+
+
+
+
+
+
+
+
+# *********** ========== Schemas for MFA ========== ***********
+# TODO=> Common CRUD Response Wrapper (for all CRUD operations)
+class CRUDResponseWrapper(BaseModel):
+    data: Optional[Dict[str, Any]] = None  # Holds response data dynamically
+    message: str  # Custom message for each CRUD operation
+    status: bool  # True if successful, False otherwise
+    code: int = 200  # HTTP response code (default 200)
+
+
+# ? Add MFA Schema => Request Body
+class AddMFARequestSchema(BaseModel):
+    mfa_type: str = Field(..., description="Type of MFA (e.g., 'sms', 'email', 'authenticator')")
+    mfa_provider: str = Field(..., description="MFA provider (e.g., 'google', 'microsoft', 'email', 'sms')")
+    device_id: Optional[str] = Field(None, description="Unique identifier for authenticator apps (if applicable)")
+    mfa_device_name: Optional[str] = Field(None, description="Name for TOTP device (if applicable)")
+    
+    @field_validator("mfa_type")
+    def validate_mfa_type(cls, value):
+        valid_types = {"sms", "email", "authenticator"}
+        if value not in valid_types:
+            raise ValueError(f"Invalid MFA type. Choose from {valid_types}")
+        return value
+
+    @field_validator("mfa_provider")
+    def validate_mfa_provider(cls, value):
+        valid_providers = {"google", "microsoft", "email", "sms"}
+        if value not in valid_providers:
+            raise ValueError(f"Invalid MFA provider. Choose from {valid_providers}")
+        return value
+
+
+# ? Edit MFA Schema => Request Body
+class EditMFARequestSchema(BaseModel):
+    mfa_device_name: Optional[str] = Field(None, description="Updated name for MFA device")
+    is_active: Optional[bool] = Field(None, description="Enable or disable MFA")
+    preferred: Optional[bool] = Field(None, description="Set this as the preferred MFA method")
+
+
+# ! MFA Response Schema (For a Single MFA Record) => Response Body
+class MFAResponseSchema(BaseModel):
+    id: str
+    user_id: str
+    mfa_type: str
+    mfa_provider: str
+    device_id: Optional[str] = None
+    mfa_device_name: Optional[str] = None
+    created_at: datetime
+    last_modified_at: Optional[datetime] = None
+    is_active: bool
+    is_preferred: bool = Field(..., description="Indicates if this is the user's preferred MFA method")
+
+
+# ! List MFA Response (For fetching all user MFA methods) => Response Body
+class MFAListResponseSchema(BaseModel):
+    total: int
+    mfa_methods: List[MFAResponseSchema]
+
+
+# ? Update MFA Settings => Request Body
+class MFAUpdateSchema(BaseModel):
+    is_mfa_enabled: bool
+    preferred_mfa_method: Optional[str] = Field(None, description="Preferred MFA method (e.g., 'sms', 'email', 'authenticator')")
+
+
+# ! Delete MFA Response Schema => Response Body
+class DeleteMFAResponseSchema(BaseModel):
+    message: str
+    status: bool
+
+
+# ! MFA Response Data - Holds the `user` and `mfa` details
+class MFAResponseData(BaseModel):
+    user: UserResponseSchema
+    mfa_methods: List[MFAResponseSchema]
+
+
+# ! Use Common CRUD Wrapper for Responses
+class AddMFAResponse(CRUDResponseWrapper):
+    data: Optional[MFAResponseSchema] = None
+    message: str = "MFA method added successfully."
+
+
+class EditMFAResponse(CRUDResponseWrapper):
+    data: Optional[MFAResponseSchema] = None
+    message: str = "MFA method updated successfully."
+
+
+class ViewMFAResponse(CRUDResponseWrapper):
+    data: Optional[MFAResponseData] = None
+    message: str = "MFA details retrieved successfully."
+
+
+class DeleteMFAResponse(CRUDResponseWrapper):
+    data: Optional[dict] = None
+    message: str = "MFA method deleted successfully."
 # *********** ========== End ========== ***********

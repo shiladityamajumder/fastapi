@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 # Third-party library imports
 import jwt
 from argon2 import PasswordHasher
-from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, ForeignKey, Integer, ARRAY
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
@@ -59,8 +59,9 @@ class User(Base):
     phone_number = Column(String(20), nullable=True)  # Unique for OTP login
 
     # * MFA Fields
-    is_mfa_enabled = Column(Boolean, default=False)
-
+    is_mfa_enabled = Column(Boolean, default=False)  # Enforce MFA on login
+    preferred_mfa_method = Column(String(20), nullable=True)  # e.g., 'sms', 'email', 'authenticator'
+    
     # * Permissions and Roles
     is_superuser = Column(Boolean, default=False)
     is_staff = Column(Boolean, default=False)
@@ -85,6 +86,7 @@ class User(Base):
     token_regeneration_code = Column(String(255), nullable=True, unique=True) # ? This field is used for securely regenerating access or refresh tokens.
     
     tokens = relationship("Token", back_populates="user", cascade="all, delete-orphan")
+    mfa_settings = relationship("MFA", back_populates="user", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint(
@@ -259,7 +261,7 @@ class Token(Base):
     __tablename__ = "tokens"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
-    user_id = Column(String, ForeignKey(USER_ID_COLUMN), nullable=False)
+    user_id = Column(String, ForeignKey(USER_ID_COLUMN, ondelete="CASCADE"), nullable=False)
     token = Column(String, nullable=False)
     token_type = Column(String, nullable=False)  # 'access' or 'refresh'
     jti = Column(String, unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
@@ -296,7 +298,7 @@ class OTP(Base):
     __tablename__ = "otp_codes"
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
-    user_id = Column(String, ForeignKey(USER_ID_COLUMN), nullable=False)
+    user_id = Column(String, ForeignKey(USER_ID_COLUMN, ondelete="CASCADE"), nullable=False)
     otp_code = Column(String(6), nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     is_used = Column(Boolean, default=False)
@@ -337,10 +339,23 @@ class MFA(Base):
     __tablename__ = "mfa_settings"
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
-    user_id = Column(String, ForeignKey(USER_ID_COLUMN), nullable=False)
-    mfa_type = Column(String(20), nullable=False)  # e.g., 'sms', 'authenticator'
-    mfa_provider = Column(String(20), nullable=False)
-    mfa_secret = Column(String(255), nullable=False)
+    user_id = Column(String, ForeignKey(USER_ID_COLUMN, ondelete="CASCADE"), nullable=False)
+
+    mfa_type = Column(String(20), nullable=False)  # e.g. 'sms', 'email', 'authenticator'
+    mfa_provider = Column(String(20), nullable=False)  # 'google', 'microsoft', 'email', 'sms'
+    
+    # * Allow multiple TOTP devices
+    device_id = Column(String(100), nullable=True, unique=True)  # Unique identifier for each authenticator app
+    mfa_secret = Column(String(255), nullable=False)  # Secret for TOTP (None for SMS/Email)
+    mfa_device_name = Column(String(100), nullable=True)  # Device name for TOTP (if multiple)
+    mfa_backup_codes = Column(ARRAY(String), nullable=True)  # Stores backup codes
+
+    # * New Fields for SMS/Email OTP
+    otp_code = Column(String(255), nullable=True)  # Store hashed OTP for SMS/Email
+    otp_expires_at = Column(DateTime(timezone=True), nullable=True)  # Expiry timestamp
+    otp_attempts = Column(Integer, default=0)  # Track OTP attempts
+    otp_attempts_limit = Column(Integer, default=5)  # Max OTP retries before lock
+    is_otp_used = Column(Boolean, default=False)  # Prevent reuse of OTP
 
     created_at = Column(DateTime(timezone=True), server_default=func.utcnow())
     last_modified_at = Column(DateTime(timezone=True), onupdate=func.utcnow())
@@ -370,7 +385,7 @@ class PasswordReset(Base):
     __tablename__ = "password_reset_codes"
     
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
-    user_id = Column(String, ForeignKey(USER_ID_COLUMN), nullable=False)
+    user_id = Column(String, ForeignKey(USER_ID_COLUMN, ondelete="CASCADE"), nullable=False)
     otp_code = Column(String(6), nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False)
     is_used = Column(Boolean, default=False)
