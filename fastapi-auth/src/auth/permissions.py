@@ -70,4 +70,28 @@ def has_role(role: str):
             )
         return user
     return role_checker
+
+
+# ? pass the specific list of roles in routers
+def has_any_role(*roles: str):
+    """
+    Permission: Ensures the user has at least one of the specified roles.
+
+    Args:
+        roles (str): Accepted roles.
+
+    Returns:
+        User: The authenticated user with one of the required roles.
+
+    Raises:
+        HTTPException: If the user does not have the required role.
+    """
+    def role_checker(user: User = Depends(get_current_user)):
+        if user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"User does not have the required role. Allowed roles: {roles}",
+            )
+        return user
+    return role_checker
 # *********** ========== End of Permission Classes ========== ***********

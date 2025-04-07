@@ -46,10 +46,11 @@ class UserCreateSchema(BaseModel):
 
     # ? Field Validator for username
     @field_validator('username')
-    def validate_username(cls, values):
-        if not re.match(USERNAME_REGEX, values):
+    def validate_username(cls, value: str) -> str:
+        value = value.lower()  # Automatically convert to lowercase
+        if not re.match(USERNAME_REGEX, value):
             raise ValueError(ERROR_MESSAGES["invalid_username"])
-        return values
+        return value
     
     # ? Field Validator for email
     @field_validator('email')
@@ -64,8 +65,30 @@ class UserCreateSchema(BaseModel):
         if not values:
             raise ValueError(ERROR_MESSAGES["full_name_required"])
         return values
+    
+    # ? Field Validator for role
+    @field_validator('role')
+    def validate_role(cls, values):
+        allowed_roles = {"user", "moderator"}
+        if values and values not in allowed_roles:
+            raise ValueError(ERROR_MESSAGES["invalid_role"])
+        return values
+
     class Config:
         orm_mode = True  # Allows compatibility with ORM models
+
+
+# ! UserMinimalSchema - Minimal schema for user data => Response Body
+# * Used in various places where only basic user info is needed
+class UserMinimalSchema(BaseModel):
+    id: str
+    username: str
+    full_name: str
+    email: EmailStr
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
 
 
 # ! UserResponseSchema - Schema for user response => Response Body
@@ -83,6 +106,8 @@ class UserResponseSchema(BaseModel):
     updated_at: Optional[datetime] = None
     country_code: Optional[str] = None
     phone_number: Optional[str] = None
+    job_title: Optional[str] = None
+    department: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
@@ -97,6 +122,7 @@ class UserResponseSchema(BaseModel):
     is_mfa_enabled: bool  # Renamed field for MFA
     preferred_mfa_method: Optional[str] = None
     role: str
+    created_by: Optional[UserMinimalSchema] = None # User who created this user
 
     class Config:
         orm_mode = True  # Allows compatibility with ORM models

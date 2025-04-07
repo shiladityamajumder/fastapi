@@ -28,12 +28,13 @@ from .emails import send_registration_email, send_password_reset_email
 
 
 # *********** ========== User Registartion Service ========== ***********
-def create_user(db: Session, user_data: UserCreateSchema):
+def create_user(db: Session, creator_user: User, user_data: UserCreateSchema):
     """
     Create a new user in the database.
 
     Args:
         db (Session): The database session.
+        creator_user (User): The admin/moderator creating the new user.
         user_data (UserCreateSchema): The data for creating a new user.
 
     Raises:
@@ -74,7 +75,8 @@ def create_user(db: Session, user_data: UserCreateSchema):
         full_name=user_data.full_name,
         country_code=user_data.country_code,
         phone_number=user_data.phone_number,
-        role="user",  # Default role, can be changed if needed
+        role=user_data.role or "user",  # Use provided role or default to "user"
+        created_by=creator_user.id if hasattr(User, "created_by") else None  # Optional tracking
     )
     
     # Set the user's password using the method from the User model

@@ -32,7 +32,7 @@ from .service import (
 from .dependencies import get_db
 from .utils import get_current_user
 from .constants import ERROR_MESSAGES
-from .permissions import is_authenticated
+from .permissions import is_authenticated, has_any_role
 import traceback  # Add this for detailed error logs
 
 
@@ -42,12 +42,13 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 # *********** ========== Registration Router ========== ***********
 @router.post("/register", response_model=AuthResponseWrapper, status_code=status.HTTP_201_CREATED)
-async def register_user(user_data: UserCreateSchema, db: Session = Depends(get_db)):
+async def register_user(user_data: UserCreateSchema, creator_user: User = Depends(has_any_role("admin", "moderator")), db: Session = Depends(get_db)):
     """
     Register a new user.
 
     Args:
         user_data (UserCreateSchema): The data for creating a new user.
+        creator_user (User): The authenticated admin/moderator user.
         db (Session): The database session.
 
     Returns:
@@ -59,7 +60,7 @@ async def register_user(user_data: UserCreateSchema, db: Session = Depends(get_d
 
     try:
         # Validate and create the user using the service function
-        return create_user(db, user_data)  # Simply return the response from the service
+        return create_user(db=db, creator_user=creator_user, user_data=user_data) # Simply return the response from the service
     except ValueError as e:
         # Specific user registration failure due to validation errors
         raise HTTPException(

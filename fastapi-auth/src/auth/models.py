@@ -53,6 +53,7 @@ class User(Base):
     date_joined = Column(DateTime(timezone=True), server_default=func.utcnow())
     created_at = Column(DateTime(timezone=True), server_default=func.utcnow())
     updated_at = Column(DateTime(timezone=True), onupdate=func.utcnow())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete field
     
     # * Optional Fields
     country_code = Column(String(5), nullable=True)
@@ -61,13 +62,16 @@ class User(Base):
     # * MFA Fields
     is_mfa_enabled = Column(Boolean, default=False)  # Enforce MFA on login
     preferred_mfa_method = Column(String(20), nullable=True)  # e.g., 'sms', 'email', 'authenticator'
+    mfa_backup_codes = Column(ARRAY(String), nullable=True)  # Backup codes for MFA
     
     # * Permissions and Roles
     is_superuser = Column(Boolean, default=False)
     is_staff = Column(Boolean, default=False)
-    role = Column(String(50), nullable=False)
+    role = Column(String(50), nullable=False) # e.g., 'user', 'admin', 'editor', 'moderator', 'superuser'
 
     # * Profile Fields
+    job_title = Column(String(100), nullable=True)
+    department = Column(String(100), nullable=True)
     address = Column(String(255), nullable=True)
     city = Column(String(100), nullable=True)
     state = Column(String(100), nullable=True)
@@ -84,7 +88,11 @@ class User(Base):
 
     # * Token Regeneration Code
     token_regeneration_code = Column(String(255), nullable=True, unique=True) # ? This field is used for securely regenerating access or refresh tokens.
-    
+
+    # * Self-Referential Relationship for created_by
+    created_by_id = Column(String, ForeignKey("users.id"), nullable=True)
+    created_by = relationship("User", remote_side=[id], backref="created_users")
+
     tokens = relationship("Token", back_populates="user", cascade="all, delete-orphan")
     mfa_settings = relationship("MFA", back_populates="user", cascade="all, delete-orphan")
 

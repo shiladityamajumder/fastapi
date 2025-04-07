@@ -4,8 +4,8 @@
 # Password must be at least 8 characters long and contain at least one letter and one number.
 PASSWORD_REGEX = r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*?&]{8,}$"
 
-# Username can only contain letters, numbers, underscores, and hyphens.
-USERNAME_REGEX = r"^[a-zA-Z0-9_.-]+$"
+# Username can only contain lowercase letters, numbers, underscores, and hyphens.
+USERNAME_REGEX = r"^[a-z0-9_.-]+$"
 
 # email regex
 EMAIL_REGEX = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
@@ -26,7 +26,8 @@ USER_ID_COLUMN = "users.id"  # Define a constant for the user ID column
 ERROR_MESSAGES = {
     "passwords_do_not_match": "Passwords do not match.",  # Error when passwords entered do not match
     "invalid_password": "Password must be at least 8 characters long, contain letters and numbers.",  # Error for invalid password format
-    "invalid_username": "Username can only contain letters, numbers, underscores, or dots.",  # Error for invalid username format
+    "invalid_username": "Username must only contain lowercase letters, numbers, underscores, hyphens, or dots.",  # Error for invalid username format
+    "invalid_role": "Invalid role. Allowed roles are: user and moderator",  # Error for invalid role
     "email_exists": "A user with this email already exists.",  # Error when email is already registered
     "phone_number_exists": "A user with this phone number already exists.",  # Error when phone number is already registered
     "username_exists": "A user with this username already exists.",  # Error when username is already taken
