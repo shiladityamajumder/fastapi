@@ -8,10 +8,10 @@ from datetime import datetime, timedelta, timezone
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, Request
 
 # Local application imports
-from .models import User, Token, PasswordReset
+from .models import User, Token, Session, PasswordReset
 from .schemas import (
     UserCreateSchema, UserResponseSchema, AuthTokensSchema, UserAuthResponseSchema, AuthResponseWrapper, 
     UserLoginSchema, ProfileUpdateRequestSchema, UserProfileResponseData, UserProfileResponseWrapper, 
@@ -20,7 +20,9 @@ from .schemas import (
     ResetPasswordWithTokenRequestSchema, ResetPasswordResponseData, ResetPasswordResponseWrapper, 
     LogoutRequestSchema, LogoutResponseData, LogoutResponseWrapper, 
     RefreshTokenRequestSchema, RefreshTokenRegenerateSchema,
-    ErrorDetails, ErrorResponseWrapper,
+    ErrorDetails, ErrorResponseWrapper, 
+    SessionCreateSchema, SessionResponseSchema, ListSessionsResponseSchema, 
+    RevokeSessionRequestSchema, RevokeSessionResponseSchema, SessionWrapper, 
 )
 from .constants import ERROR_MESSAGES  # Importing error messages for user feedback
 from .utils import get_current_user
@@ -101,10 +103,21 @@ def create_user(db: Session, creator_user: User, user_data: UserCreateSchema):
         else:
             raise ValueError("Database error occurred while creating user.")
 
+
+    # Create a new session for the user
+    new_session = Session(
+        user_id=new_user.id,
+        device_info="Admin Device",  # You can customize this as needed
+        ip_address="0.0.0.0"  # Replace with actual IP address if available
+    )
+    db.add(new_session)
+    db.commit()
+    db.refresh(new_session)
+
     # Generate tokens using the method from the User model
     try:
         access_token = new_user.generate_access_token()
-        refresh_token = new_user.generate_refresh_token(db)
+        refresh_token = new_user.generate_refresh_token(db, new_session.id)
     except Exception as e:
         # Handle any token generation errors
         raise ValueError(f"Token generation error: {str(e)}")
@@ -137,11 +150,12 @@ def create_user(db: Session, creator_user: User, user_data: UserCreateSchema):
 
 
 # *********** ========== User Login Service ========== ***********
-def authenticate_user(db: Session, login_data: UserLoginSchema):
+def authenticate_user(request: Request, login_data: UserLoginSchema, db: Session):
     """
     Authenticate a user based on their email and password using the UserLoginSchema.
 
     Args:
+        request (Request): The HTTP request object.
         db (Session): The database session.
         login_data (UserLoginSchema): The login data containing email and password.
 
@@ -172,10 +186,35 @@ def authenticate_user(db: Session, login_data: UserLoginSchema):
     if not user.verify_password(password):
         raise ValueError(ERROR_MESSAGES["incorrect_password"])
 
+    # Check for an existing active session for the same user and device
+    existing_session = db.query(Session).filter(
+        Session.user_id == user.id,
+        Session.device_info == request.headers.get("User-Agent", "Unknown"),
+        Session.is_active == True
+    ).first()
+
+    # If an existing session is found, deactivate it
+    if existing_session:
+        db.delete(existing_session)  # Delete the previous session
+        db.commit()  # Commit the changes to the database
+
+    # Create a new session for the user
+    try:
+        new_session = Session(
+            user_id=user.id,
+            device_info=request.headers.get("User-Agent", "Unknown"),  # Get device info from request
+            ip_address=request.client.host  # Get IP address from request
+        )
+        db.add(new_session)
+        db.commit()
+    except Exception as e:
+        # Handle session creation errors
+        raise ValueError(f"Session creation error: {str(e)}")
+    
     # Generate new tokens for the user
     try:
         access_token = user.generate_access_token()
-        refresh_token = user.generate_refresh_token(db)
+        refresh_token = user.generate_refresh_token(db, new_session.id)  # Pass the new session ID
     except Exception as e:
         # Handle any token generation errors
         raise ValueError(f"Token generation error: {str(e)}")
@@ -187,6 +226,7 @@ def authenticate_user(db: Session, login_data: UserLoginSchema):
             refresh=refresh_token
         ),
         user=UserResponseSchema.model_validate(user),
+        session_id=new_session.id,
         status="success",
         code=200
     )
@@ -562,6 +602,83 @@ def regenerate_access_token(db: Session, regenerate_data: RefreshTokenRegenerate
     return AuthResponseWrapper(
         data=response_data,
         message="Access token regenerated successfully.",
+        status=True
+    )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== List Active Sessions Service ========== ***********
+def list_active_sessions(db: Session, user_id: str):
+    """
+    Retrieve all active sessions for a user.
+
+    Args:
+        db (Session): The database session.
+        user_id (str): The ID of the user.
+
+    Returns:
+        ListSessionsResponseSchema: The response object with active sessions.
+    """
+
+    # Query active sessions for the user
+    sessions = db.query(Session).filter(
+        Session.user_id == user_id,
+        Session.is_active == True
+    ).all()
+
+    # Convert sessions to SessionResponseSchema
+    session_responses = [SessionResponseSchema.model_validate(session) for session in sessions]
+
+    return ListSessionsResponseSchema(
+        sessions=session_responses,
+        message="Active sessions retrieved successfully",
+        status=True
+    )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Revoke Session Service ========== ***********
+def revoke_session(db: Session, session_id: str, user_id: str):
+    """
+    Revoke a specific session for a user.
+
+    Args:
+        db (Session): The database session.
+        session_id (str): The ID of the session to revoke.
+        user_id (str): The ID of the user.
+
+    Returns:
+        RevokeSessionResponseSchema: The response object with a success message.
+
+    Raises:
+        ValueError: If the session is not found or does not belong to the user.
+    """
+
+    # Find the session
+    session = db.query(Session).filter(
+        Session.id == session_id,
+        Session.user_id == user_id
+    ).first()
+
+    if not session:
+        raise ValueError("Session not found or does not belong to the user.")
+
+    # Revoke the session
+    session.is_active = False
+    db.commit()
+
+    # Invalidate the token associated with this session
+    token = db.query(Token).filter(
+        Token.session_id == session_id,
+        Token.user_id == user_id
+    ).first()
+
+    if token:
+        token.is_blacklisted = True
+        db.commit()
+
+    return RevokeSessionResponseSchema(
+        message="Session and associated token revoked successfully",
         status=True
     )
 # *********** ========== End ========== ***********

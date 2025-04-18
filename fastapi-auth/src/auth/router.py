@@ -1,7 +1,7 @@
 # src/auth/router.py
 
 # FastAPI imports
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 
 # Third-party imports
 from pydantic import ValidationError
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Local application imports
 from .models import User, Token
@@ -22,12 +25,15 @@ from .schemas import (
     LogoutRequestSchema, LogoutResponseData, LogoutResponseWrapper, 
     RefreshTokenRequestSchema, RefreshTokenRegenerateSchema,
     ErrorDetails, ErrorResponseWrapper,
+    SessionCreateSchema, SessionResponseSchema, ListSessionsResponseSchema, 
+    RevokeSessionRequestSchema, RevokeSessionResponseSchema, SessionWrapper,
     )
 from .service import ( 
     create_user, authenticate_user, logout_user, change_password_service, 
     send_password_reset_otp_service, reset_password_service, 
     get_user_profile_service, update_user_profile_service,
     refresh_access_token, regenerate_access_token,
+    list_active_sessions, revoke_session,
     )
 from .dependencies import get_db
 from .utils import get_current_user
@@ -38,6 +44,19 @@ import traceback  # Add this for detailed error logs
 
 # ? Initialize the router for authentication
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+# ? Get the rate limiter instance from the app state
+limiter = Limiter(key_func=get_remote_address)
+
+
+# ? *********** ========== Custom exception handler for rate limit exceeded ========== ***********
+@router.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"message": "Too many requests. Please try again later."},
+    )
+# ? *********** ========== End ========== ***********
 
 
 # *********** ========== Registration Router ========== ***********
@@ -108,11 +127,13 @@ async def register_user(user_data: UserCreateSchema, creator_user: User = Depend
 
 # *********** ========== Login Router ========== ***********
 @router.post("/login", response_model=AuthResponseWrapper, status_code=status.HTTP_200_OK)
-async def login_user(login_data: UserLoginSchema, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")  # Limit to 5 requests per minute
+async def login_user(request: Request, login_data: UserLoginSchema, db: Session = Depends(get_db)):
     """
     Authenticate a user and generate access and refresh tokens.
 
     Args:
+        request (Request): The request object (required for rate limiting).
         login_data (UserLoginSchema): The login data containing email and password.
         db (Session): The database session.
 
@@ -125,7 +146,7 @@ async def login_user(login_data: UserLoginSchema, db: Session = Depends(get_db))
 
     try:
         # Authenticate the user using the service function
-        auth_response = authenticate_user(db, login_data)  # Await the coroutine
+        auth_response = authenticate_user(request, login_data, db)  # Await the coroutine
         return auth_response  # Simply return the response from the service
     
     except ValueError as e:
@@ -584,6 +605,142 @@ async def regenerate_access_token_route(regenerate_data: RefreshTokenRegenerateS
                     code=status.HTTP_500_INTERNAL_SERVER_ERROR
                 ),
                 message="Token regeneration failed due to an internal error",
+                status=False
+            ).model_dump()
+        )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== List Active Sessions Router ========== ***********
+@router.get("/sessions/active", response_model=ListSessionsResponseSchema, status_code=status.HTTP_200_OK)
+async def list_active_sessions_route(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    List all active sessions for the current user.
+
+    Args:
+        current_user (User): The authenticated user.
+        db (Session): The database session.
+
+    Returns:
+        ListSessionsResponseSchema: The response object with active sessions.
+    """
+
+    try:
+        # Call the service to list active sessions
+        response = list_active_sessions(db, current_user.id)
+        return response  # Return the service response directly
+
+    except ValueError as e:
+        # Specific failure due to invalid session or user
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=str(e),
+                    status="error",
+                    code=status.HTTP_401_UNAUTHORIZED
+                ),
+                message="Failed to list active sessions",
+                status=False
+            ).model_dump()
+        )
+
+    except ValidationError as e:
+        # Schema validation errors
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=ERROR_MESSAGES["invalid_data_format"],
+                    status="error",
+                    code=status.HTTP_422_UNPROCESSABLE_ENTITY
+                ),
+                message=str(e),
+                status=False
+            ).model_dump()
+        )
+
+    except Exception as e:
+        # Catch-all for unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=ERROR_MESSAGES["unexpected_error"],
+                    status="error",
+                    code=status.HTTP_500_INTERNAL_SERVER_ERROR
+                ),
+                message="Failed to list active sessions due to an internal error",
+                status=False
+            ).model_dump()
+        )
+# *********** ========== End ========== ***********
+
+
+# *********** ========== Revoke Session Router ========== ***********
+@router.post("/sessions/revoke", response_model=RevokeSessionResponseSchema, status_code=status.HTTP_200_OK)
+async def revoke_session_route(request: RevokeSessionRequestSchema, current_user: User = Depends(get_current_user),db: Session = Depends(get_db)):
+    """
+    Revoke a specific session for the current user.
+
+    Args:
+        request (RevokeSessionRequestSchema): The request body containing the session ID.
+        current_user (User): The authenticated user.
+        db (Session): The database session.
+
+    Returns:
+        RevokeSessionResponseSchema: The response object with a success message.
+
+    Raises:
+        HTTPException: If the session is not found or does not belong to the user.
+    """
+
+    try:
+        # Call the service to revoke the session
+        response = revoke_session(db, request.session_id, current_user.id)
+        return response  # Return the service response directly
+
+    except ValueError as e:
+        # Specific failure due to invalid session or user
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=str(e),
+                    status="error",
+                    code=status.HTTP_404_NOT_FOUND
+                ),
+                message="Session revocation failed",
+                status=False
+            ).model_dump()
+        )
+
+    except ValidationError as e:
+        # Schema validation errors
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=ERROR_MESSAGES["invalid_data_format"],
+                    status="error",
+                    code=status.HTTP_422_UNPROCESSABLE_ENTITY
+                ),
+                message=str(e),
+                status=False
+            ).model_dump()
+        )
+
+    except Exception as e:
+        # Catch-all for unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorResponseWrapper(
+                data=ErrorDetails(
+                    details=ERROR_MESSAGES["unexpected_error"],
+                    status="error",
+                    code=status.HTTP_500_INTERNAL_SERVER_ERROR
+                ),
+                message="Session revocation failed due to an internal error",
                 status=False
             ).model_dump()
         )

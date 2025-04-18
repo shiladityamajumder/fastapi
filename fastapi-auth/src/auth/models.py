@@ -95,7 +95,8 @@ class User(Base):
 
     tokens = relationship("Token", back_populates="user", cascade="all, delete-orphan")
     mfa_settings = relationship("MFA", back_populates="user", cascade="all, delete-orphan")
-
+    sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
+    
     __table_args__ = (
         CheckConstraint(
             "role IN ('user', 'admin', 'editor', 'moderator', 'superuser')",
@@ -135,8 +136,17 @@ class User(Base):
         logger.info("Creating access token for user: %s", self.username)
         return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-    def generate_refresh_token(self, db) -> str:
-        """Generates a refresh token and invalidates the previous one."""
+    def generate_refresh_token(self, db, session_id: str) -> str:
+        """
+        Generates a refresh token and invalidates the previous one.
+
+        Args:
+            db (Session): The database session.
+            session_id (str): The ID of the session associated with this token.
+
+        Returns:
+            str: The generated refresh token.
+        """
         issued_at = datetime.now(timezone.utc)
         expires_at = issued_at + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
         jti = str(uuid.uuid4())
@@ -158,6 +168,7 @@ class User(Base):
         # Save the token to the database
         token_entry = Token(
             user_id=self.id,
+            session_id=session_id,
             token=refresh_token,
             token_type="refresh",
             jti=jti,
@@ -270,6 +281,7 @@ class Token(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     user_id = Column(String, ForeignKey(USER_ID_COLUMN, ondelete="CASCADE"), nullable=False)
+    session_id = Column(String, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
     token = Column(String, nullable=False)
     token_type = Column(String, nullable=False)  # 'access' or 'refresh'
     jti = Column(String, unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
@@ -282,9 +294,10 @@ class Token(Base):
     is_active = Column(Boolean, default=True)
 
     user = relationship("User", back_populates="tokens")
+    session = relationship("Session", back_populates="tokens")
 
     def __repr__(self):
-        return f"<Token (id={self.id}, user_id={self.user_id}, token_type={self.token_type}, expires_at={self.expires_at})>"
+        return f"<Token (id={self.id}, user_id={self.user_id}, session_id={self.session_id}, token_type={self.token_type}, expires_at={self.expires_at})>"
 
     def hard_delete(self, db):
         """Permanently deletes the token from the database."""
@@ -296,6 +309,51 @@ class Token(Base):
         self.is_active = False
         self.is_blacklisted = True
         self.last_modified_at = datetime.now(timezone.utc)
+
+
+# ? The Session model is used to store user sessions.
+# ? It includes fields for the user ID, device information, IP address, login time, and other details.
+# ? The model also includes methods for session management, such as updating last activity and revoking sessions.
+class Session(Base):
+    __tablename__ = "sessions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    device_info = Column(String, nullable=False)  # e.g., browser, OS
+    ip_address = Column(String, nullable=False)
+    login_time = Column(DateTime(timezone=True), default=func.utcnow())
+    last_activity = Column(DateTime(timezone=True), default=func.utcnow())
+
+    created_at = Column(DateTime(timezone=True), server_default=func.utcnow())
+    last_modified_at = Column(DateTime(timezone=True), onupdate=func.utcnow())
+    is_active = Column(Boolean, default=True)
+
+    user = relationship("User ", back_populates="sessions")
+
+    def __repr__(self):
+        return f"<Session (id={self.id}, user_id={self.user_id}, device_info={self.device_info}, ip_address={self.ip_address}, is_active={self.is_active})>"
+
+    def update_last_activity(self):
+        """Updates the last activity timestamp."""
+        self.last_activity = datetime.now(timezone.utc)
+
+    def revoke(self, db):
+        """Revokes the session and invalidates the associated token."""
+        self.is_active = False
+        # Invalidate the token associated with this session
+        for token in self.tokens:
+            token.soft_delete()
+        db.commit()
+
+        logger.info("Session revoked for user: %s", self.user_id)
+    def hard_delete(self, db):
+        """Permanently deletes the session from the database."""
+        db.delete(self)
+        db.commit()
+
+    def soft_delete(self):
+        """Marks the session as inactive."""
+        self.is_active = False
 
 
 # ? The OTP model is used to store OTP codes for phone login.

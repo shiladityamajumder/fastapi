@@ -23,6 +23,7 @@ class UserCreateSchema(BaseModel):
     confirm_password: str = Field(..., min_length=8, max_length=128)
     country_code: Optional[str] = Field(None, max_length=5)
     phone_number: Optional[str] = Field(None, max_length=20)
+    role: Optional[str] = Field(None)
 
     # ? Convert email to lowercase before validation
     @field_validator("email", mode="before")
@@ -67,6 +68,7 @@ class UserCreateSchema(BaseModel):
         return values
     
     # ? Field Validator for role
+    # * Newly created user's role
     @field_validator('role')
     def validate_role(cls, values):
         allowed_roles = {"user", "moderator"}
@@ -139,6 +141,7 @@ class AuthTokensSchema(BaseModel):
 class UserAuthResponseSchema(BaseModel):
     tokens: AuthTokensSchema
     user: UserResponseSchema
+    session_id: str
     status: str
     code: int
 
@@ -432,6 +435,69 @@ class LogoutResponseData(BaseModel):
 # ! LogoutResponseWrapper - Wrapper for logout response => Response Body
 class LogoutResponseWrapper(BaseModel):
     data: LogoutResponseData
+    message: str
+    status: bool
+# *********** ========== End ========== *********** 
+
+
+
+
+
+
+
+
+
+
+# *********** ========== Schemas for Session Management ========== ***********
+# ? SessionCreateSchema - Schema for creating a new session => Request Body
+
+class SessionCreateSchema(BaseModel):
+    user_id: str = Field(..., description="The ID of the user for whom the session is created.")
+    device_info: str = Field(..., description="Information about the device used for the session.")
+    ip_address: str = Field(..., description="The IP address from which the user logged in.")
+
+    class Config:
+        orm_mode = True  # Allows compatibility with ORM models
+
+
+# ! SessionResponseSchema - Schema for session response => Response Body
+class SessionResponseSchema(BaseModel):
+    id: str
+    user_id: str
+    device_info: str
+    ip_address: str
+    login_time: datetime
+    last_activity: datetime
+    is_active: bool
+
+    class Config:
+        orm_mode = True  # Allows compatibility with ORM models
+
+
+# ! ListSessionsResponseSchema - Wrapper for listing sessions => Response Body
+class ListSessionsResponseSchema(BaseModel):
+    sessions: list[SessionResponseSchema]
+    message: str
+    status: bool
+
+
+# ! RevokeSessionRequestSchema - Schema for revoking a session => Request Body
+class RevokeSessionRequestSchema(BaseModel):
+    session_id: str = Field(..., description="The ID of the session to revoke.")
+
+    class Config:
+        orm_mode = True  # Allows compatibility with ORM models
+
+
+# ! RevokeSessionResponseSchema - Response schema for revoking a session => Response Body
+class RevokeSessionResponseSchema(BaseModel):
+    message: str
+    status: bool
+
+
+# ! SessionWrapper - Wrapper for session-related responses => Response Body
+class SessionWrapper(BaseModel):
+    data: Optional[SessionResponseSchema] = None
     message: str
     status: bool
 # *********** ========== End ========== *********** 

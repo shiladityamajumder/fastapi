@@ -10,6 +10,10 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.errors import RateLimitExceeded
 
 # Local application imports
 from src.auth.router import router as auth_router  # Importing the authentication router
@@ -44,6 +48,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# *********** ========== Initialize Rate Limiter ========== ***********
+limiter = Limiter(key_func=get_remote_address, storage_uri="redis://localhost:6379")
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
 
 # *********** ========== Middleware Configuration ========== ***********
 app.add_middleware(
